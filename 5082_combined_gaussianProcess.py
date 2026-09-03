@@ -253,7 +253,7 @@ def lnprior(p):
         return -np.inf
     if not (0 < amp < 0.005):
         return -np.inf
-    if not (0 < scale < 365):
+    if not (0 < scale < 0.21):
         return -np.inf
 
     p_star = (3 * np.pi * pow(r_star_sma,3))/(497.582 * period**2)
