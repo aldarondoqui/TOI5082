@@ -79,14 +79,6 @@ def std_dev(arr_time):
     return idx1, idx2
 
 
-#Transit (cleaned)
-transit_file = ascii.read("/home/nadja/Documents/UWMadison/Research/TOI5082/tic437011608flattened-2min.csv")
-time = transit_file["Time (BJD-2457000)"] 
-transit_flux = transit_file["Flattened Flux"]
-
-transit_time = time + 2457000
-
-
 def unpack_file(filepath):
     df = pd.read_csv(filepath, comment="#")
     for col in ("ccfjdsum", "ccfrvmod", "dvrms"):
@@ -110,8 +102,16 @@ def sma_star_units(sma, rstar):
 
 ## Input files and output dir
 
+#Transit (cleaned)
 directory = '/home/nadja/Documents/UWMadison/Research/TOI5082/'
 
+transit_file = ascii.read(directory+"tic437011608flattened-2min.csv")
+time = transit_file["Time (BJD-2457000)"] 
+transit_flux = transit_file["Flattened Flux"]
+transit_time = time + 2457000
+
+
+#RVs
 first_rv = (directory + "NEID_TOI5082_RM_Event202502.csv")
 second_rv = (directory + "2026-01-20_TOI5082.csv")
 
@@ -131,7 +131,7 @@ sma = 11.8  #RATIO
 RSTAR = 0.93
 a_calc = sma_star_units(sma, RSTAR)
 vsini = 7
-lambda_guess = -40
+lambda_guess = 0
 incl = 87
 r_1 = 1 / sma
 r_2 = rp_rs * r_1
@@ -180,11 +180,12 @@ def systemic_offset(time, data, err):
     gamma_weighted = np.sum(weights[out_of_transit_mask] * data[out_of_transit_mask]) / np.sum(weights[out_of_transit_mask]) #change
     data = data - gamma_weighted #change
     return data
-
+'''
 rv_data_1 = systemic_offset(time_obs_1, rv_data_1_RAW, rv_err_1)
-rv_data_2 = systemic_offset(time_obs_2, rv_data_2_RAW, rv_err_2)
+rv_data_2 = systemic_offset(time_obs_2, rv_data_2_RAW, rv_err_2)'''
 
-
+rv_data_1 = rv_data_1_RAW
+rv_data_2 = rv_data_2_RAW
 
 #TESS standard dev
 phase_trans = ((transit_time - t0_bjd) / orbital_period) - np.round(
@@ -250,12 +251,10 @@ def lnprior(p):
     b = np.abs(r_star_sma * np.cos(np.deg2rad(inc)) * (1-ecc**2)/(1+ecc*np.sin(w_peri)))
     if b < 0 or b > 1:
         return -np.inf
-    if amp < 0:
+    if not (0 < amp < 0.005):
         return -np.inf
-    if scale < 0:
+    if not (0 < scale < 365):
         return -np.inf
-    '''if not (-0.5 < a < 0.5): return -np.inf
-    if not (-0.5 < m < 0.5): return -np.inf'''
 
     p_star = (3 * np.pi * pow(r_star_sma,3))/(497.582 * period**2)
 
@@ -336,11 +335,11 @@ def rv_loglikelihood(p, trend, time, rv_obs, rv_err):
 
     #call gp func instead of of loglikelihood
     theta = {
-    "log_amp": jnp.log(amp),    
-    "log_scale": jnp.log(scale_val),      
-    "log_diag": jnp.log(rv_err**2)} #SQUARE THIS
-
-    gp = build_gp(theta, time) #might b wrong
+        "log_amp": jnp.log(amp),    
+        "log_scale": jnp.log(scale_val),      
+        "log_diag": jnp.log(rv_err**2)} 
+    
+    gp = build_gp(theta, time_centered)
     logl = gp.log_probability((rv_obs - base))
     
     #rv_loglikelihood = -0.5 * (chisq+norm)
@@ -371,7 +370,7 @@ def lnprob(p, time_rv, time_rv_2, time_trans, rv_obs_1, rv_obs_2, trans_obs, rv_
 
 ## IF USING THIS METHOD PUT EVERYTHING IN THE FUNCTION ALSO SET THE METHOD INSIDE THE FUNCTION TO NOT CRASH THE PROGRAM.
 if __name__ == "__main__":
-    mp.set_start_method("forkserver", force=True)
+    mp.set_start_method("spawn", force=True)
 
     p0 = [sma, rp_rs, vsini, lambda_guess, t0_bjd, incl, orbital_period, 
           fs_guess, fc_guess, coef_1, coef_2, amplitude, scale, 
@@ -381,7 +380,7 @@ if __name__ == "__main__":
     out = edm.edmcmc(
     lnprob, p0, [0.01, 0.001, 0.1, 1, 0.00001, 0.001, 0.00001, 0.05, 0.05, 0.001, 0.001, 0.001, 0.001, 0.000001, 0.001, 0.000001, 0.001], #probably have to tighten constraints in the scale as to not blow it up
     args=(time_obs_1, time_obs_2, transit_time, 
-    rv_data_1, rv_data_2, transit_flux, 
+    rv_data_1_RAW, rv_data_2_RAW, transit_flux, 
     rv_err_1, rv_err_2, trans_err),
     nwalkers=100,  
     nlink=nlink,
